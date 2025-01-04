@@ -1,7 +1,7 @@
 
-# Geetak - Kontrol USB Relay dengan CLI
+# Geetak - Kontrol USB Relay dengan CLI !
 
-![PyPI](https://img.shields.io/pypi/v/geetak) ![License](https://img.shields.io/github/license/username/geetak) ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![PyPI](https://img.shields.io/pypi/v/geetak) ![License](https://img.shields.io/github/license/muflihnurfaizi/geetak) ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 
 **Geetak** adalah aplikasi berbasis CLI (Command-Line Interface) untuk mengontrol USB relay secara efisien. Aplikasi ini memanfaatkan protokol HID untuk menghubungkan perangkat USB relay dengan komputer Anda. Dengan **Geetak**, Anda dapat mengatur timer, memeriksa perangkat, dan menyinkronkan waktu dengan server NTP secara langsung melalui terminal.
 
