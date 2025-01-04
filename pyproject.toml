@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "geetak"
+version = "0.1.0"
+description = "This is a CLI for controlling GeeTak device"
+authors = ["muflih <nurfaizimuflih10@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+click = "^8.1.8"
+hidapi = "^0.14.0.post4"
+ntplib = "^0.4.0"
+rich = "^13.9.4"
+rich-click = "^1.8.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+geetak = "geetak:cli" #entry point for CLI
