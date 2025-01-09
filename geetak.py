@@ -1,15 +1,21 @@
+import platform
 import click
 import time
 from datetime import datetime, timezone, timedelta
 from threading import Timer
 from rich.progress import Progress, TextColumn, BarColumn, TimeRemainingColumn
 from rich_click import RichCommand, RichGroup
-import hid
+from rich import print
 import ntplib
 import os
 import json
 import rich_click as click
-from rich import print
+
+# Cross-platform HID library imports
+if platform.system() == "Windows":
+    import pywinusb.hid as hid # type: ignore
+else:
+    import hid
 
 # Configure rich-click
 click.rich_click.USE_RICH_MARKUP = True
@@ -32,52 +38,98 @@ class USBRelayController:
         self.vendor_id = vendor_id
         self.product_id = product_id
         self.device = None
+        self.report = None
+        self.is_windows = platform.system() == "Windows"
 
     def connect(self):
         try:
-            self.device = hid.device()
-            self.device.open(self.vendor_id, self.product_id)
-            print("Perangkat berhasil terhubung.")
+            if self.is_windows:
+                # Windows-specific: pywinusb.hid
+                filter = hid.HidDeviceFilter(vendor_id=self.vendor_id, product_id=self.product_id)
+                devices = filter.get_devices()
+                if not devices:
+                    raise Exception("Tidak ada perangkat HID yang ditemukan.")
+                self.device = devices[0]
+                self.device.open()
+                self.get_report()
+            else:
+                # Cross-platform: hidapi
+                self.device = hid.device()
+                self.device.open(self.vendor_id, self.product_id)
+                self.device.set_nonblocking(1)
+
+            print("[bold green]Perangkat berhasil terhubung.[/bold green]")
         except Exception as e:
             print(f"Gagal menghubungkan perangkat: {e}")
 
+    def get_report(self):
+        if self.is_windows and self.device:
+            reports = self.device.find_output_reports() + self.device.find_feature_reports()
+            if reports:
+                self.report = reports[0]
+            else:
+                print("[red]Tidak ada laporan yang ditemukan pada perangkat.[/red]")
+
     def is_device_available(self):
         try:
-            self.device = hid.device()
-            self.device.open(self.vendor_id, self.product_id)
-            self.device.close()
-            return True
-        except Exception as e:
+            if self.is_windows:
+                # Check using pywinusb.hid
+                filter = hid.HidDeviceFilter(vendor_id=self.vendor_id, product_id=self.product_id)
+                devices = filter.get_devices()
+                return len(devices) > 0
+            else:
+                # Check using hidapi
+                device = hid.device()
+                device.open(self.vendor_id, self.product_id)
+                device.close()
+                return True
+        except Exception:
             return False
 
     def write(self, buffer):
         try:
-            if self.device:
-                self.device.write(buffer)
+            if self.is_windows:
+                if self.report:
+                    # Ensure the buffer is exactly 9 bytes
+                    #if len(buffer) < 9:
+                    #    buffer += [0] * (9 - len(buffer))  # Pad with zeros
+                    #elif len(buffer) > 9:
+                    #    buffer = buffer[:9]  # Truncate to 9 bytes
+                    buffer = [0x00] + buffer  # Add report ID (or 0x00 if not used)
+                    buffer += [0x00] * (9 - len(buffer))  # Ensure 9 bytes
+                    print(f"[yellow]Mengirim data ke perangkat (Windows): {buffer}[/yellow]")
+                    self.report.send(raw_data=buffer)
+                else:
+                    print("[red]Tidak ada laporan yang tersedia untuk mengirim data.[/red]")
             else:
-                print("Perangkat tidak terhubung.")
+                # For macOS/Linux (hidapi)
+                buffer = [0x00] + buffer  # Add report ID (or 0x00 if not used)
+                buffer += [0x00] * (9 - len(buffer))  # Ensure 9 bytes
+                print(f"[yellow]Mengirim data ke perangkat (macOS/Linux): {buffer}[/yellow]")
+                self.device.write(buffer)
         except Exception as e:
-            print(f"Gagal mengirim data ke perangkat: {e}")
-
+            print(f"[red]Gagal mengirim data ke perangkat: {e}[/red]")
     def disconnect(self):
         if self.device:
             try:
-                self.device.close()
-                print("Perangkat berhasil terputus.")
+                if self.is_windows:
+                    if self.device.is_opened():
+                        self.device.close()
+                else:
+                    self.device.close()
+                print("[bold green]Perangkat berhasil terputus.[/bold green]")
             except Exception as e:
-                print(f"Gagal memutuskan perangkat: {e}")
+                print(f"[red]Gagal memutuskan perangkat: {e}[/red]")
 
     def trigger_relay(self, relay_number, duration=1):
-        """Menghidupkan relay dan mematikannya setelah durasi tertentu."""
-        print(f"Relay {relay_number} dihidupkan.")
-        buffer_on = [0, 0xFF, relay_number, 0, 0, 0, 0, 0, 1]
+        print(f"[bold cyan]Relay {relay_number} dihidupkan.[/bold cyan]")
+        buffer_on = [0xFF, relay_number, 0, 0, 0, 0, 0, 1]
         self.write(buffer_on)
 
         def turn_off():
-            print(f"Relay {relay_number} dimatikan.")
-            buffer_off = [0, 0xFD, relay_number, 0, 0, 0, 0, 0, 1]
+            print(f"[bold cyan]Relay {relay_number} dimatikan.[/bold cyan]")
+            buffer_off = [0xFD, relay_number, 0, 0, 0, 0, 0, 1]
             self.write(buffer_off)
-            # Disconnect after turning off the relay
             self.disconnect()
 
         Timer(duration, turn_off).start()
@@ -101,7 +153,7 @@ def get_ntp_time():
     """Mengambil waktu UTC dari server NTP dan menyesuaikan dengan zona waktu yang dikonfigurasi."""
     try:
         ntp_client = ntplib.NTPClient()
-        response = ntp_client.request('pool.ntp.org')
+        response = ntp_client.request('2.id.pool.ntp.org')
         # Gunakan datetime UTC dengan timezone
         utc_time = datetime.fromtimestamp(response.tx_time, tz=timezone.utc)
 
